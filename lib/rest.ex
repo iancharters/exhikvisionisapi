@@ -1,13 +1,12 @@
 defmodule EXHikvisionISAPI.Rest do
-  @user "admin"
+  @username "admin"
   @password "Pro_4303"
 
-  def conn(host, type, command) do
+  def conn(host, type, uri) do
     HTTPoison.start
 
-    #headers = "Authorization: Basic " <> Base.encode64("#{@user}:#{@password}")
     headers = [
-      "Authorization": "Basic " <> Base.encode64("#{@user}:#{@password}"),
+      "Authorization": "Basic " <> Base.encode64("#{@username}:#{@password}"),
       "Connection": "keep-alive",
       "Host": host,
     ]
@@ -17,13 +16,12 @@ defmodule EXHikvisionISAPI.Rest do
     case type do
       :get ->
         #call server
-        HTTPoison.get!("#{host}#{command}", headers)
-        |> digest
+        auth = HTTPoison.get!("#{host}#{uri}", headers)
+        |> handle_header
+        |> build_digest(@username, @password, "GET", host, uri)
 
-        #digest
+        HTTPoison.get!("#{host}#{uri}", ["Authorization": auth, "Connetion": "keep-alive", "Host": host])
 
-
-        #interpret response
       :put ->
         IO.puts "PUT ACTION"
       :post ->
@@ -35,26 +33,70 @@ defmodule EXHikvisionISAPI.Rest do
     end
   end
 
-  def digest(response) do
+  def build_digest(auth, username, password, method, host, path) do
+    ha1 = md5(username <> ":" <> auth["realm"] <> ":" <> password)
+    ha2 = md5("#{method}:#{path}")
+    client_nonce =  cnonce()
+    nc = "00000001"
+    response = md5("#{ha1}:#{auth["nonce"]}:#{nc}:#{client_nonce}:#{auth["qop"]}:#{ha2}")
+    result = Map.to_list(%{
+      "username" => username,
+      "realm" => auth["realm"],
+      "nonce" => auth["nonce"],
+      "uri" => path,
+      "qop" => auth["qop"],
+      "nc" => nc,
+      "cnonce" => client_nonce,
+      "response" => response,
+    })
+    |> add_opaque(auth["opaque"])
+    |> Enum.reduce([], fn({key, val}, acc) ->
+      case key do
+        "nc" -> acc ++ ["#{key}=#{val}"]
+        _ -> acc ++ ["#{key}=\"#{val}\""]
+      end
+    end)
+    |> Enum.join(",")
+
+    "Digest #{result}"
+  end
+
+  def handle_header(response) do
     if response.status_code === 401 do
       {_, digest_value} = response.headers
                 |> Enum.find fn {x,y} -> x == "WWW-Authenticate" end
 
+    #TODO: Fix RegEx so I can remove the String.contains? hack
     String.replace(digest_value, "Digest ", "")
     |> String.split(",")
     |> Enum.reduce(%{}, fn(string, acc) ->
-     parse_map = Regex.named_captures(~r/(?<key>.+)="(?<val>.+)"/, string)
-     if parse_map["key"] !== nil do
+      if String.contains?(string, "opaque") do
+        key = "opaque"
+        value = ""
+      end
+
+      parse_map = Regex.named_captures(~r/(?<key>.+)="(?<val>.+)"/, string)
+
+      if parse_map["key"] !== nil do
        trimmed_key = String.trim(parse_map["key"])
        item = %{trimmed_key => parse_map["val"]}
         Map.merge(acc, item)
       else
-        Map.merge(acc, %{})
-     end
+        Map.merge(acc, %{key => value})
+      end
     end)
-
-
-
     end
   end
+
+  defp cnonce() do
+   :crypto.strong_rand_bytes(4)
+   |> Base.encode16(case: :lower)
+  end
+
+  def md5(data) do
+    Base.encode16(:erlang.md5(data), case: :lower)
+  end
+
+  defp add_opaque(response, opaque) when opaque in [nil, ""], do: response
+  defp add_opaque(response, opaque), do: Map.put(response, "opaque", opaque)
 end

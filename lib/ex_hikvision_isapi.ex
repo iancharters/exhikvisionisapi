@@ -1,5 +1,5 @@
 defmodule EXHikvisionISAPI do
-  @host "http://15782marine.proactivealarms.com:81/ISAPI/"
+  @host "http://15782marine.proactivealarms.com:81"
 
   @moduledoc """
   Documentation for ExHikvisionIsapi.
@@ -19,6 +19,6 @@ defmodule EXHikvisionISAPI do
   end
 
   def go do
-    EXHikvisionISAPI.Rest.conn(@host, :get, "System/status")
+    EXHikvisionISAPI.Rest.conn(@host, :get, "/ISAPI/System/status")
   end
 end
