@@ -1,26 +1,16 @@
 defmodule EXHikvisionISAPI.Rest do
-  @username "admin"
-  @password "Pro_4303"
-
-  def conn(host, type, uri) do
+  def conn({host, username, password}, type, uri) do
     HTTPoison.start
-
-    headers = [
-      "Authorization": "Basic " <> Base.encode64("#{@username}:#{@password}"),
-      "Connection": "keep-alive",
-      "Host": host,
-    ]
-
-    options = []
 
     case type do
       :get ->
         #call server
-        auth = HTTPoison.get!("#{host}#{uri}", headers)
+        digest_header = HTTPoison.get!("#{host}#{uri}")
         |> handle_header
-        |> build_digest(@username, @password, "GET", host, uri)
+        |> build_digest(username, password, "GET", host, uri)
+        |> build_header(host)
 
-        HTTPoison.get!("#{host}#{uri}", ["Authorization": auth, "Connetion": "keep-alive", "Host": host])
+        HTTPoison.get!("#{host}#{uri}", digest_header)
 
       :put ->
         IO.puts "PUT ACTION"
@@ -86,6 +76,14 @@ defmodule EXHikvisionISAPI.Rest do
       end
     end)
     end
+  end
+
+  def build_header(auth, host) do
+    [
+      "Authorization": auth,
+      "Connection": "keep-alive",
+      "Host": host,
+    ]
   end
 
   defp cnonce() do
